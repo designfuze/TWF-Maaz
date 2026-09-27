@@ -113,6 +113,92 @@ function doGet() {
 }
 
 
+
+// ============================================================
+// VERCEL API BRIDGE
+// ============================================================
+
+function doPost(e) {
+
+  try {
+
+    const body =
+      e && e.postData && e.postData.contents
+        ? e.postData.contents
+        : '{}';
+
+    const request = JSON.parse(body);
+    const action = String(request.action || '').trim();
+    const data = request.data || {};
+
+    let result;
+
+    switch (action) {
+
+      case 'getFormConfig':
+        result = getFormConfig();
+        break;
+
+      case 'submitApplication':
+        result = submitApplication(data);
+        break;
+
+      case 'getAdmitCardStatus':
+        result = getAdmitCardStatus(data.applicationId);
+        break;
+
+      case 'getAdmitCard':
+        result = getAdmitCard(data.applicationId);
+        break;
+
+      case 'checkResult':
+        result = checkResult(data.applicationId);
+        break;
+
+      case 'getBrandAssets':
+        result = getBrandAssets();
+        break;
+
+      default:
+        result = {
+          success: false,
+          message: 'Unknown API action.'
+        };
+    }
+
+    return ContentService
+      .createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (error) {
+
+    console.error('doPost error:', error);
+
+    return ContentService
+      .createTextOutput(
+        JSON.stringify({
+          success: false,
+          message:
+            error && error.message
+              ? error.message
+              : 'Unable to process request.'
+        })
+      )
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+
+function getBrandAssets() {
+
+  return {
+    success: true,
+    logoDataUrl: getTWFLogoDataUrl_(),
+    signatureDataUrl: getTWFSignatureDataUrl_(),
+    examinationDate: getExaminationDate_()
+  };
+}
+
 // ============================================================
 // INITIAL PROJECT SETUP
 // ============================================================
@@ -326,6 +412,24 @@ function submitApplication(data) {
       }
 
       // ------------------------------------------------------
+      // Duplicate Application Check
+      // ------------------------------------------------------
+      // A student is allowed to submit only ONE application.
+      // The primary identity check is Student Name + Date of Birth.
+      // This check happens inside the Script Lock so two submissions
+      // cannot pass the check at the same time.
+
+      const duplicate = findDuplicateApplication_(sheet, data);
+
+      if (duplicate) {
+        throw new Error(
+          'An application has already been submitted for this student. ' +
+          'Application ID: ' + duplicate.applicationId +
+          '. Only one application is allowed per student.'
+        );
+      }
+
+      // ------------------------------------------------------
       // Generate Application ID
       // ------------------------------------------------------
 
@@ -461,6 +565,107 @@ function submitApplication(data) {
       message: error.message || 'Unable to submit application.'
     };
   }
+}
+
+
+// ============================================================
+// DUPLICATE APPLICATION CHECK
+// ============================================================
+
+function findDuplicateApplication_(sheet, data) {
+
+  if (!sheet || sheet.getLastRow() < 2) {
+    return null;
+  }
+
+  const lastRow = sheet.getLastRow();
+
+  // Applications columns: A:R
+  const values = sheet
+    .getRange(2, 1, lastRow - 1, 18)
+    .getValues();
+
+  const submittedName = normalizeStudentName_(data.studentName);
+  const submittedDob = normalizeDob_(data.dob);
+
+  if (!submittedName || !submittedDob) {
+    return null;
+  }
+
+  for (let i = 0; i < values.length; i++) {
+
+    const row = values[i];
+
+    const existingName = normalizeStudentName_(row[2]);
+    const existingDob = normalizeDob_(row[4]);
+
+    if (
+      existingName === submittedName &&
+      existingDob === submittedDob
+    ) {
+      return {
+        applicationId: String(row[1] || '').trim()
+      };
+    }
+  }
+
+  return null;
+}
+
+
+function normalizeStudentName_(value) {
+
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+
+function normalizeDob_(value) {
+
+  if (!value) {
+    return '';
+  }
+
+  // Handle actual Google Sheets Date values.
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    if (isNaN(value.getTime())) {
+      return '';
+    }
+
+    return Utilities.formatDate(
+      value,
+      CONFIG.TIMEZONE,
+      'yyyy-MM-dd'
+    );
+  }
+
+  const text = String(value).trim();
+
+  if (!text) {
+    return '';
+  }
+
+  // The website normally sends DOB as yyyy-MM-dd.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return text;
+  }
+
+  // Also support common stored/displayed date formats.
+  const parsed = new Date(text);
+
+  if (!isNaN(parsed.getTime())) {
+    return Utilities.formatDate(
+      parsed,
+      CONFIG.TIMEZONE,
+      'yyyy-MM-dd'
+    );
+  }
+
+  return text
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
 }
 
 
@@ -1999,92 +2204,4 @@ function escapeHtml_(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
-}
-
-// ============================================================
-// VERCEL API BRIDGE
-// ============================================================
-
-function doPost(e) {
-  try {
-    var body = {};
-
-    if (e && e.postData && e.postData.contents) {
-      body = JSON.parse(e.postData.contents);
-    }
-
-    var action = String(body.action || '').trim();
-    var data = body.data || {};
-
-    if (!body.data) {
-      data = {};
-      Object.keys(body).forEach(function(key) {
-        if (key !== 'action') data[key] = body[key];
-      });
-    }
-
-    var result;
-
-    switch (action) {
-      case 'health':
-        result = {
-          success: true,
-          message: 'Tabasheer Welfare Foundation API is working.',
-          timestamp: new Date().toISOString()
-        };
-        break;
-
-      case 'getFormConfig':
-        result = getFormConfig();
-        break;
-
-      case 'getBrandAssets':
-        result = {
-          success: true,
-          logoDataUrl: getTWFLogoDataUrl_(),
-          signatureDataUrl: getTWFSignatureDataUrl_()
-        };
-        break;
-
-      case 'submitApplication':
-        result = submitApplication(data);
-        break;
-
-      case 'getAdmitCardStatus':
-        result = getAdmitCardStatus(data.applicationId || body.applicationId);
-        break;
-
-      case 'getAdmitCard':
-        result = getAdmitCard(data.applicationId || body.applicationId);
-        break;
-
-      case 'checkResult':
-        result = checkResult(data.applicationId || body.applicationId);
-        break;
-
-      default:
-        result = {
-          success: false,
-          message: 'Unknown API action: ' + action
-        };
-    }
-
-    return jsonResponse_(result);
-
-  } catch (error) {
-    console.error('doPost error:', error);
-    return jsonResponse_({
-      success: false,
-      message: error && error.message ? error.message : 'Server error.'
-    });
-  }
-}
-
-function jsonResponse_(payload) {
-  return ContentService
-    .createTextOutput(JSON.stringify(payload || {
-      success: false,
-      message: 'Empty server response.'
-    }))
-    .setMimeType(ContentService.MimeType.JSON);
 }
