@@ -20,6 +20,7 @@
   </title>
 
   <link
+    id="siteFavicon"
     rel="icon"
     type="image/png"
     href=""
@@ -1609,7 +1610,7 @@
 
         <img
           class="brand-logo"
-          id="siteLogo"
+          data-twf-logo
           src=""
           alt="Tabasheer Welfare Foundation Logo"
         >
@@ -2515,7 +2516,7 @@
 
           <img
             class="document-logo result-logo"
-            id="resultLogo"
+            data-twf-logo
             src=""
             alt="Tabasheer Welfare Foundation Logo"
           >
@@ -2658,7 +2659,7 @@
 
           <img
             class="document-logo admit-logo"
-            id="admitLogo"
+            data-twf-logo
             src=""
             alt="Tabasheer Welfare Foundation Logo"
           >
@@ -3081,45 +3082,6 @@
 
     let currentApplicationId = '';
 
-    /* ======================================================
-       VERCEL API
-    ====================================================== */
-
-    const API_URL = '/api/twf';
-
-    async function callAPI(action, data = {}) {
-
-      const response = await fetch(API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          action: action,
-          data: data
-        })
-      });
-
-      let result;
-
-      try {
-        result = await response.json();
-      } catch (error) {
-        throw new Error('Server returned an invalid response.');
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          result && result.message
-            ? result.message
-            : 'API request failed.'
-        );
-      }
-
-      return result;
-    }
-
-
 
     /* ======================================================
        CURRENT YEAR
@@ -3171,6 +3133,63 @@
 
 
     /* ======================================================
+       VERCEL API
+    ====================================================== */
+
+    const API_URL = '/api/twf';
+
+    async function callAPI(action, data = {}) {
+
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          action: action,
+          data: data
+        })
+      });
+
+      let result;
+
+      try {
+        result = await response.json();
+      } catch (error) {
+        throw new Error('Server returned an invalid response.');
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          result && result.message
+            ? result.message
+            : 'API request failed.'
+        );
+      }
+
+      return result;
+    }
+
+    async function loadBrandAssets() {
+      try {
+        const assets = await callAPI('getBrandAssets');
+
+        if (!assets || !assets.success) return;
+
+        document.querySelectorAll('[data-twf-logo]').forEach(function (img) {
+          if (assets.logoDataUrl) img.src = assets.logoDataUrl;
+        });
+
+        const favicon = document.getElementById('siteFavicon');
+        if (favicon && assets.logoDataUrl) favicon.href = assets.logoDataUrl;
+      } catch (error) {
+        console.warn('Brand assets could not be loaded.', error);
+      }
+    }
+
+    loadBrandAssets();
+
+    /* ======================================================
        LOAD FORM CONFIG
     ====================================================== */
 
@@ -3179,102 +3198,29 @@
       function () {
 
         loadFormConfig();
-        loadBrandAssets();
 
       }
     );
 
 
-    async function loadBrandAssets() {
-
-      try {
-
-        const assets = await callAPI('getBrandAssets');
-
-        if (!assets || !assets.success) return;
-
-        const logoElements = [
-          document.getElementById('siteLogo'),
-          document.getElementById('resultLogo'),
-          document.getElementById('admitLogo')
-        ];
-
-        logoElements.forEach(function (element) {
-          if (element && assets.logoDataUrl) {
-            element.src = assets.logoDataUrl;
-          }
-        });
-
-        const favicon =
-          document.getElementById('siteFavicon');
-
-        if (favicon && assets.logoDataUrl) {
-          favicon.href = assets.logoDataUrl;
-        }
-
-      } catch (error) {
-        // Branding is non-blocking. The portal remains usable.
-        console.warn('Brand assets could not be loaded.', error);
-      }
-    }
-
-
     async function loadFormConfig() {
 
       try {
-
         const config = await callAPI('getFormConfig');
 
-        populateSelect(
-          'gender',
-          config.gender || []
-        );
-
-        populateSelect(
-          'board',
-          config.board || [
-            'CBSE',
-            'ICSE',
-            'BSEB',
-            'Other'
-          ]
-        );
-
-        populateSelect(
-          'examCentre',
-          config.examCentre || []
-        );
-
-        populateSelect(
-          'medium',
-          config.medium || []
-        );
+        populateSelect('gender', config.gender || ['Male', 'Female', 'Other']);
+        populateSelect('board', config.board || ['CBSE', 'ICSE', 'BSEB', 'Other']);
+        populateSelect('examCentre', config.examCentre || ['Purnia', 'Araria', 'Kishanganj', 'Other']);
+        populateSelect('medium', config.medium || ['English', 'Hindi', 'Urdu', 'Other']);
 
       } catch (error) {
-
-        // Fallback values keep the form usable if configuration
-        // cannot be loaded.
-        populateSelect(
-          'gender',
-          ['Male', 'Female', 'Other']
-        );
-
-        populateSelect(
-          'board',
-          ['CBSE', 'ICSE', 'BSEB', 'Other']
-        );
-
-        populateSelect(
-          'examCentre',
-          ['Purnia', 'Araria', 'Kishanganj', 'Other']
-        );
-
-        populateSelect(
-          'medium',
-          ['English', 'Hindi', 'Urdu', 'Other']
-        );
-
+        populateSelect('gender', ['Male', 'Female', 'Other']);
+        populateSelect('board', ['CBSE', 'ICSE', 'BSEB', 'Other']);
+        populateSelect('examCentre', ['Purnia', 'Araria', 'Kishanganj', 'Other']);
+        populateSelect('medium', ['English', 'Hindi', 'Urdu', 'Other']);
+        console.warn('Unable to load form configuration:', error);
       }
+
     }
 
 
@@ -3460,7 +3406,7 @@
 
     document
       .getElementById('applicationForm')
-      .addEventListener('submit', async function (event) {
+      .addEventListener('submit', function (event) {
 
         event.preventDefault();
 
@@ -3469,66 +3415,106 @@
         const form = this;
 
         if (!form.checkValidity()) {
+
           form.reportValidity();
+
           return;
         }
 
         const photoFile =
-          document.getElementById('photo').files[0];
+          document
+            .getElementById('photo')
+            .files[0];
 
         if (!photoFile) {
+
           showMessage(
             'formMessage',
             'Please upload a passport size photograph.',
             'error'
           );
+
           return;
         }
 
         if (photoFile.size > 2 * 1024 * 1024) {
+
           showMessage(
             'formMessage',
             'Photo size must not exceed 2 MB.',
             'error'
           );
+
           return;
         }
 
-        setLoading(true, 'Submitting your application...');
+        setLoading(
+          true,
+          'Submitting your application...'
+        );
 
-        readPhotoAsBase64(photoFile, async function (photoData) {
+        readPhotoAsBase64(
+          photoFile,
+          function (photoData) {
 
-          const data = {
-            studentName: value('studentName'),
-            gender: value('gender'),
-            dob: value('dob'),
-            phone: value('phone'),
-            email: value('email'),
-            school: value('school'),
-            board: value('board'),
-            boardOther: value('boardOther'),
-            district: value('district'),
-            examCentre: value('examCentre'),
-            medium: value('medium'),
-            mediumOther: value('mediumOther'),
-            address: value('address'),
-            declaration:
-              document.getElementById('declaration').checked,
-            photo: photoData
-          };
+            const data = {
 
-          try {
-            const result = await callAPI(
-              'submitApplication',
-              data
-            );
+              studentName:
+                value('studentName'),
 
-            handleSubmissionSuccess(result);
+              gender:
+                value('gender'),
 
-          } catch (error) {
-            handleSubmissionFailure(error);
+              dob:
+                value('dob'),
+
+              phone:
+                value('phone'),
+
+              email:
+                value('email'),
+
+              school:
+                value('school'),
+
+              board:
+                value('board'),
+
+              boardOther:
+                value('boardOther'),
+
+              district:
+                value('district'),
+
+              examCentre:
+                value('examCentre'),
+
+              medium:
+                value('medium'),
+
+              mediumOther:
+                value('mediumOther'),
+
+              address:
+                value('address'),
+
+              declaration:
+                document
+                  .getElementById('declaration')
+                  .checked,
+
+              photo: photoData
+
+            };
+
+
+            callAPI('submitApplication', data)
+              .then(handleSubmissionSuccess)
+              .catch(handleSubmissionFailure);
+
           }
-        });
+        );
+
       });
 
 
@@ -3695,7 +3681,7 @@
        ADMIT CARD
     ====================================================== */
 
-    async function checkAdmitCard() {
+    function checkAdmitCard() {
 
       const id =
         value('admitApplicationId')
@@ -3703,106 +3689,96 @@
           .toUpperCase();
 
       if (!id) {
+
         showMessage(
           'admitMessage',
           'Please enter your Application ID.',
           'error'
         );
+
         return;
       }
 
       hideMessage('admitMessage');
 
-      try {
+      setLoading(
+        true,
+        'Checking Admit Card availability...'
+      );
 
-        setLoading(
-          true,
-          'Checking Admit Card availability...'
-        );
 
-        const result = await callAPI(
-          'getAdmitCardStatus',
-          { applicationId: id }
-        );
+      callAPI('getAdmitCardStatus', { applicationId: id })
+        .then(function (result) {
 
-        setLoading(false);
+          setLoading(false);
 
-        if (!result || !result.success) {
+          if (!result || !result.success) {
+            showMessage(
+              'admitMessage',
+              result && result.message ? result.message : 'Unable to find application.',
+              'error'
+            );
+            return;
+          }
+
+          if (!result.available) {
+            showMessage(
+              'admitMessage',
+              '🔒 ' + result.message,
+              'error'
+            );
+            return;
+          }
+
+          loadAdmitCard(id);
+
+        })
+        .catch(function (error) {
+          setLoading(false);
           showMessage(
             'admitMessage',
-            result && result.message
-              ? result.message
-              : 'Unable to find application.',
+            error && error.message ? error.message : 'Unable to check Admit Card.',
             'error'
           );
-          return;
-        }
+        });
 
-        if (!result.available) {
-          showMessage(
-            'admitMessage',
-            '🔒 ' + result.message,
-            'error'
-          );
-          return;
-        }
-
-        await loadAdmitCard(id);
-
-      } catch (error) {
-
-        setLoading(false);
-
-        showMessage(
-          'admitMessage',
-          error.message ||
-            'Unable to check Admit Card.',
-          'error'
-        );
-      }
     }
 
 
-    async function loadAdmitCard(id) {
+    function loadAdmitCard(id) {
 
-      try {
+      setLoading(
+        true,
+        'Generating your Admit Card...'
+      );
 
-        setLoading(
-          true,
-          'Generating your Admit Card...'
-        );
 
-        const data = await callAPI(
-          'getAdmitCard',
-          { applicationId: id }
-        );
+      callAPI('getAdmitCard', { applicationId: id })
+        .then(function (data) {
 
-        setLoading(false);
+          setLoading(false);
 
-        if (!data || !data.success) {
+          if (!data || !data.success) {
+            showMessage(
+              'admitMessage',
+              data && data.message ? data.message : 'Unable to generate Admit Card.',
+              'error'
+            );
+            return;
+          }
+
+          renderAdmitCard(data);
+
+        })
+        .catch(function (error) {
+          setLoading(false);
           showMessage(
             'admitMessage',
-            data && data.message
-              ? data.message
-              : 'Unable to generate Admit Card.',
+            error && error.message ? error.message : 'Unable to generate Admit Card.',
             'error'
           );
-          return;
-        }
+        });
 
-        renderAdmitCard(data);
-
-      } catch (error) {
-
-        setLoading(false);
-
-        showMessage(
-          'admitMessage',
-          error.message ||
-            'Unable to generate Admit Card.',
-          'error'
-        );
-      }
     }
 
 
@@ -3945,7 +3921,7 @@
        RESULT
     ====================================================== */
 
-    async function checkResult() {
+    function checkResult() {
 
       const id =
         value('resultApplicationId')
@@ -3953,113 +3929,83 @@
           .toUpperCase();
 
       if (!id) {
+
         showMessage(
           'resultMessage',
           'Please enter your Application ID.',
           'error'
         );
+
         return;
       }
 
       hideMessage('resultMessage');
 
       document
-        .getElementById('resultBox')
-        .style.display = 'none';
+        .getElementById(
+          'resultBox'
+        )
+        .style.display =
+        'none';
 
-      try {
 
-        setLoading(
-          true,
-          'Checking examination result...'
-        );
+      setLoading(
+        true,
+        'Checking examination result...'
+      );
 
-        const result = await callAPI(
-          'checkResult',
-          { applicationId: id }
-        );
 
-        setLoading(false);
+      callAPI('checkResult', { applicationId: id })
+        .then(function (result) {
 
-        if (!result || !result.success) {
+          setLoading(false);
+
+          if (!result || !result.success) {
+            showMessage(
+              'resultMessage',
+              result && result.message ? result.message : 'Unable to check result.',
+              'error'
+            );
+            return;
+          }
+
+          if (!result.published) {
+            showMessage(
+              'resultMessage',
+              '📋 ' + (result.message || 'Result has not been published yet.'),
+              'error'
+            );
+            return;
+          }
+
+          document.getElementById('resultStudentName').textContent = result.studentName || '--';
+          document.getElementById('resultStatus').textContent = result.status || '--';
+          document.getElementById('resultMarks').textContent = result.marks || '--';
+          document.getElementById('resultRank').textContent = result.rank || '--';
+          document.getElementById('resultRemarks').textContent = result.remarks || '--';
+
+          const resultSignature = document.getElementById('resultSignature');
+          if (result.signatureDataUrl && resultSignature) {
+            resultSignature.src = result.signatureDataUrl;
+            resultSignature.style.display = 'block';
+          } else if (resultSignature) {
+            resultSignature.removeAttribute('src');
+            resultSignature.style.display = 'none';
+          }
+
+          document.getElementById('resultBox').style.display = 'block';
+          document.getElementById('resultBox').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        })
+        .catch(function (error) {
+          setLoading(false);
           showMessage(
             'resultMessage',
-            result && result.message
-              ? result.message
-              : 'Unable to check result.',
+            error && error.message ? error.message : 'Unable to check result.',
             'error'
           );
-          return;
-        }
-
-        if (!result.published) {
-          showMessage(
-            'resultMessage',
-            '📋 ' + (
-              result.message ||
-              'Result has not been published yet.'
-            ),
-            'error'
-          );
-          return;
-        }
-
-        document
-          .getElementById('resultStudentName')
-          .textContent = result.studentName || '--';
-
-        document
-          .getElementById('resultStatus')
-          .textContent = result.status || '--';
-
-        document
-          .getElementById('resultId')
-          .textContent = result.applicationId || '--';
-
-        document
-          .getElementById('resultMarks')
-          .textContent = result.marks || '--';
-
-        document
-          .getElementById('resultRank')
-          .textContent = result.rank || '--';
-
-        document
-          .getElementById('resultRemarks')
-          .textContent = result.remarks || '--';
-
-        const resultSignature =
-          document.getElementById('resultSignature');
-
-        if (result.signatureDataUrl && resultSignature) {
-          resultSignature.src = result.signatureDataUrl;
-          resultSignature.style.display = 'block';
-        } else if (resultSignature) {
-          resultSignature.removeAttribute('src');
-          resultSignature.style.display = 'none';
-        }
-
-        const resultBox =
-          document.getElementById('resultBox');
-
-        resultBox.style.display = 'block';
-
-        resultBox.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center'
         });
 
-      } catch (error) {
-
-        setLoading(false);
-
-        showMessage(
-          'resultMessage',
-          error.message ||
-            'Unable to check result.',
-          'error'
-        );
-      }
     }
 
 
