@@ -1,108 +1,177 @@
-// ============================================================
-// VERCEL API BRIDGE
-// ============================================================
+module.exports = async function handler(req, res) {
 
-function doPost(e) {
+  // CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader(
+    'Access-Control-Allow-Methods',
+    'POST, OPTIONS'
+  );
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type'
+  );
+
+  // Preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
+  // Only POST
+  if (req.method !== 'POST') {
+    return res.status(405).json({
+      success: false,
+      message: 'Method not allowed. Use POST.'
+    });
+  }
+
+  // Read environment variable
+  const gasUrl = process.env.GAS_WEB_APP_URL;
+
+  if (!gasUrl) {
+    console.error(
+      'GAS_WEB_APP_URL environment variable is missing.'
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'GAS_WEB_APP_URL is not configured in Vercel.'
+    });
+  }
+
+  console.log('GAS URL configured:', gasUrl.substring(0, 50));
+
   try {
-    var body = {};
 
-    if (e && e.postData && e.postData.contents) {
-      body = JSON.parse(e.postData.contents);
-    }
+    let payload = req.body || {};
 
-    var action = String(body.action || '').trim();
-    var data = body.data || {};
+    // Sometimes Vercel provides the body as a string
+    if (typeof payload === 'string') {
 
-    // Also accept flat payloads.
-    if (!body.data) {
-      data = {};
+      try {
+        payload = JSON.parse(payload);
 
-      Object.keys(body).forEach(function(key) {
-        if (key !== 'action') {
-          data[key] = body[key];
-        }
-      });
-    }
+      } catch (error) {
 
-    var result;
-
-    switch (action) {
-
-      case 'health':
-        result = {
-          success: true,
-          message: 'Tabasheer Welfare Foundation API is working.',
-          timestamp: new Date().toISOString()
-        };
-        break;
-
-      case 'getFormConfig':
-        result = getFormConfig();
-        break;
-
-      case 'getBrandAssets':
-        result = {
-          success: true,
-          logoDataUrl: getTWFLogoDataUrl_(),
-          signatureDataUrl: getTWFSignatureDataUrl_()
-        };
-        break;
-
-      case 'submitApplication':
-        result = submitApplication(data);
-        break;
-
-      case 'getAdmitCardStatus':
-        result = getAdmitCardStatus(
-          data.applicationId || body.applicationId
-        );
-        break;
-
-      case 'getAdmitCard':
-        result = getAdmitCard(
-          data.applicationId || body.applicationId
-        );
-        break;
-
-      case 'checkResult':
-        result = checkResult(
-          data.applicationId || body.applicationId
-        );
-        break;
-
-      default:
-        result = {
+        return res.status(400).json({
           success: false,
-          message: 'Unknown API action: ' + action
-        };
+          message: 'Invalid JSON request.'
+        });
+
+      }
     }
 
-    return jsonResponse_(result);
+    console.log(
+      'Incoming action:',
+      payload.action || 'none'
+    );
+
+    // Send request to Google Apps Script
+    const upstream = await fetch(gasUrl, {
+
+      method: 'POST',
+
+      headers: {
+        'Content-Type': 'application/json'
+      },
+
+      body: JSON.stringify(payload),
+
+      redirect: 'follow'
+
+    });
+
+    const raw = await upstream.text();
+
+    console.log(
+      'Google Apps Script status:',
+      upstream.status
+    );
+
+    console.log(
+      'Google Apps Script content type:',
+      upstream.headers.get('content-type')
+    );
+
+    console.log(
+      'Google Apps Script response:',
+      raw.substring(0, 3000)
+    );
+
+    // Google returned non-2xx
+    if (!upstream.ok) {
+
+      return res.status(502).json({
+
+        success: false,
+
+        message:
+          'Google Apps Script request failed.',
+
+        googleStatus:
+          upstream.status,
+
+        googleResponse:
+          raw.substring(0, 3000)
+
+      });
+
+    }
+
+    // Parse JSON
+    let data;
+
+    try {
+
+      data = JSON.parse(raw);
+
+    } catch (error) {
+
+      console.error(
+        'Google Apps Script returned non-JSON:',
+        raw.substring(0, 3000)
+      );
+
+      return res.status(502).json({
+
+        success: false,
+
+        message:
+          'Google Apps Script returned an invalid response.',
+
+        googleStatus:
+          upstream.status,
+
+        googleContentType:
+          upstream.headers.get('content-type') || '',
+
+        googleResponse:
+          raw.substring(0, 3000)
+
+      });
+
+    }
+
+    // Return Google response to frontend
+    return res.status(200).json(data);
 
   } catch (error) {
 
-    console.error('doPost error:', error);
+    console.error(
+      'Vercel API error:',
+      error
+    );
 
-    return jsonResponse_({
+    return res.status(500).json({
+
       success: false,
-      message: error && error.message
-        ? error.message
-        : 'Server error.'
+
+      message:
+        error && error.message
+          ? error.message
+          : 'Unable to connect to Google Apps Script.'
+
     });
+
   }
-}
 
-
-function jsonResponse_(payload) {
-
-  return ContentService
-    .createTextOutput(
-      JSON.stringify(
-        payload || {
-          success: false,
-          message: 'Empty server response.'
-        }
-      )
-    )
-    .setMimeType(ContentService.MimeType.JSON);
-}
+};
